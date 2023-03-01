@@ -1,0 +1,12 @@
+.stfolder
+.stignore
+
+__pycache__
+
+.vscode
+.idea
+.trash
+
+log.txt
+debug.py
+RESTful.md

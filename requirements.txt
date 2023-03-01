@@ -1,0 +1,5 @@
+accelerate~=0.16.0
+Flask~=2.0.2
+psutil
+torch~=1.10.0+cu113
+transformers>=4.20
