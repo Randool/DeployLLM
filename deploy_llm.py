@@ -171,10 +171,14 @@ def main():
     @app.route('/inference', methods=["POST"])
     def _inference():
         timestamp = time.time()
-        data = request.get_data().decode()
-        logger.info(f"{request}\t{data}")
+        raw_data = request.get_data().decode()
+        logger.info(f"{request}\t{raw_data}")
+        
+        try:
+            prompt = json.loads(raw_data)["prompt"]
+        except Exception as e:
+            return str(e)
 
-        prompt = json.loads(data)["prompt"]
         prompt_queue.put(PromptItem(timestamp, prompt))
 
         # TODO: Block-able Dict
