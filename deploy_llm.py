@@ -23,7 +23,7 @@ from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, Genera
 
 from utils import get_logger, show_args
 
-logger = get_logger(__name__, exp_dir=None)
+logger = get_logger(__name__, exp_dir=".")
 
 
 @dataclass
@@ -230,14 +230,14 @@ def main():
     @app.route('/inference', methods=["POST"])
     def _inference():
         timestamp = time.time()
-        raw_data = request.get_data().decode()
-        logger.info(f"{request}\t{raw_data}")
 
         try:
+            raw_data = request.get_data().decode()
             prompt = json.loads(raw_data)["prompt"]
         except Exception as e:
             return str(e)
 
+        logger.info(f"{request}\t{raw_data}")
         inference_queue.enqueue(PromptItem(timestamp, prompt))
         response = vars(inference_queue.dequeue(timestamp))
         logger.info(response)
