@@ -7,7 +7,9 @@ Deploy large language model service with HuggingFace and Flask.
 ```bash
 usage: deploy_llm.py [-h] [--model_name MODEL_NAME]
                      [--torch_dtype {auto,fp16,fp32}]
-                     [--device_map {auto,balanced,balanced_low_0,sequential}]
+                     [--device_map {auto,balanced,balanced_low_0,sequential,smart}]
+                     [--gpu_max_memory GPU_MAX_MEMORY]
+                     [--cpu_max_memory CPU_MAX_MEMORY]
                      [--offload_folder OFFLOAD_FOLDER]
                      [--max_new_tokens MAX_NEW_TOKENS]
                      [--early_stopping [EARLY_STOPPING]] [--no_early_stopping]
@@ -19,11 +21,12 @@ optional arguments:
   -h, --help            show this help message and exit
   --model_name MODEL_NAME
                         Model name in HuggingFace model hub (default:
-                        bigscience/bloomz-560m)
+                        bigscience/bloomz-3b)
   --torch_dtype {auto,fp16,fp32}
-  --device_map {auto,balanced,balanced_low_0,sequential}
-                        https://huggingface.co/docs/accelerate/usage_guides/bi
-                        g_modeling#designing-a-device-map (default: auto)
+  --device_map {auto,balanced,balanced_low_0,sequential,smart}
+                        https://huggingface.co/docs/accelerate/usage_guides/big_modeling#designing-a-device-map (default: auto)
+  --gpu_max_memory GPU_MAX_MEMORY
+  --cpu_max_memory CPU_MAX_MEMORY
   --offload_folder OFFLOAD_FOLDER
   --max_new_tokens MAX_NEW_TOKENS
   --early_stopping [EARLY_STOPPING]
@@ -44,6 +47,21 @@ optional arguments:
 ```bash
 curl -X GET http://<target_host>:<target_port>/state
 ```
+
+
+#### Show Model
+
+```bash
+curl -X GET http://<target_host>:<target_port>/model
+```
+
+
+#### Show Tokenizer
+
+```bash
+curl -X GET http://<target_host>:<target_port>/tokenizer
+```
+
 
 #### Do Model Inference
 
