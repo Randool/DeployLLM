@@ -18,8 +18,7 @@ import torch
 from accelerate import infer_auto_device_map, init_empty_weights
 from flask import Flask, jsonify, request
 from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, GenerationConfig, HfArgumentParser, \
-    PreTrainedModel, \
-    PreTrainedTokenizer
+    PreTrainedModel, PreTrainedTokenizer
 
 from utils import get_logger, show_args
 
@@ -31,7 +30,7 @@ class ModelArguments:
     model_name: str = field(default="bigscience/bloomz-3b", metadata={"help": "Model name in HuggingFace model hub"})
     torch_dtype: str = field(default="fp32", metadata={"choices": ["auto", "fp16", "fp32"]})
     device_map: str = field(default="auto", metadata={
-        "choices": ["auto", "balanced", "balanced_low_0", "sequential"],
+        "choices": ["auto", "balanced", "balanced_low_0", "sequential", "smart"],
         "help": "https://huggingface.co/docs/accelerate/usage_guides/big_modeling#designing-a-device-map"
     })
     gpu_max_memory: str = field(default="6GiB")
@@ -54,7 +53,7 @@ class ModelArguments:
 
     def get_device_map(self) -> Union[str, dict]:
         """ Smarter device_map """
-        if self.device_map != "auto":
+        if self.device_map != "smart":
             return self.device_map
 
         with init_empty_weights():
