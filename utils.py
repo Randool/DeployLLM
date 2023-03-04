@@ -218,3 +218,20 @@ def setup_dist_environment(rank, world_size, master_port: int, store=None, logge
 
 def cleanup_dist_environment():
     dist.destroy_process_group()
+
+
+#### Device map ####
+
+def get_smart_device_map(checkpoint_path: str, model_class=None, max_memory: dict = None):
+    from transformers import AutoConfig, AutoModel
+    from accelerate import init_empty_weights, infer_auto_device_map
+
+    if model_class is None:
+        model_class = AutoModel
+
+    with init_empty_weights():
+        model_config = AutoConfig.from_pretrained(checkpoint_path)
+        empty_model = model_class.from_config(model_config)
+        device_map = infer_auto_device_map(empty_model, max_memory=max_memory)
+
+    return device_map

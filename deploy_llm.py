@@ -15,12 +15,11 @@ from typing import List, Union
 
 import psutil
 import torch
-from accelerate import infer_auto_device_map, init_empty_weights
 from flask import Flask, jsonify, request
-from transformers import AutoConfig, AutoModelForCausalLM, AutoTokenizer, GenerationConfig, HfArgumentParser, \
-    PreTrainedModel, PreTrainedTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer, GPT2LMHeadModel, GPT2Tokenizer, \
+    GenerationConfig, HfArgumentParser, PreTrainedModel, PreTrainedTokenizer
 
-from utils import get_logger, show_args
+from utils import get_logger, get_smart_device_map, show_args
 
 logger = get_logger(__name__, exp_dir=".")
 
@@ -51,16 +50,14 @@ class ModelArguments:
             return torch.float16
         return torch.float32
 
-    def get_device_map(self) -> Union[str, dict]:
+    def get_device_map(self, MODEL_CLASS) -> Union[str, dict]:
         """ Smarter device_map """
         if self.device_map != "smart":
             return self.device_map
 
-        with init_empty_weights():
-            model_config = AutoConfig.from_pretrained(self.checkpoint)
-            empty_model = AutoModelForCausalLM.from_config(model_config)
-            device_map = infer_auto_device_map(empty_model,
-                                               max_memory={0: self.gpu_max_memory, "cpu": self.cpu_max_memory})
+        max_memory = {0: self.gpu_max_memory, "cpu": self.cpu_max_memory}
+        device_map = get_smart_device_map(self.checkpoint, model_class=MODEL_CLASS, max_memory=max_memory)
+
         return device_map
 
 
@@ -98,10 +95,18 @@ def load_tokenizer_and_model(model_args: ModelArguments):
     gpu_before = torch.cuda.memory_allocated()
     cpu_before = psutil.virtual_memory().used
 
-    tokenizer: PreTrainedTokenizer = AutoTokenizer.from_pretrained(model_args.checkpoint)
-    model: PreTrainedModel = AutoModelForCausalLM.from_pretrained(
+    TOKENIZER_CLASS, MODEL_CLASS = AutoTokenizer, AutoModelForCausalLM
+    if "gpt" in model_args.model_name.lower():
+        TOKENIZER_CLASS, MODEL_CLASS = GPT2Tokenizer, GPT2LMHeadModel
+
+    tokenizer: PreTrainedTokenizer = TOKENIZER_CLASS.from_pretrained(
+        model_args.checkpoint, padding_side="left", truncation_side="left",
+    )
+    tokenizer.pad_token = tokenizer.eos_token if tokenizer.pad_token is None else tokenizer.pad_token
+
+    model: PreTrainedModel = MODEL_CLASS.from_pretrained(
         model_args.checkpoint,
-        device_map=model_args.get_device_map(),
+        device_map=model_args.get_device_map(MODEL_CLASS),
         torch_dtype=model_args.get_torch_dtype(),
         offload_folder=model_args.offload_folder,
     ).eval()
@@ -135,7 +140,11 @@ class ModelInferenceQueue:
 
         self.deploy_args = deploy_args
         self.gen_args = gen_args
-        self.gen_config = GenerationConfig(**vars(self.gen_args))
+        self.gen_config = GenerationConfig(
+            **vars(self.gen_args),
+            eos_token_id=tokenizer.eos_token_id,
+            pad_token_id=tokenizer.pad_token_id,
+        )
 
         # Message Queue & Result Pool
         self._queue = queue.Queue()
@@ -163,12 +172,19 @@ class ModelInferenceQueue:
     def _do_inference(self, batch: List[PromptItem]):
         batch_text = [item.prompt for item in batch]
         input_ids = self.tokenizer(batch_text, return_tensors="pt", padding=True)["input_ids"].to(0)
-        output = self.model.generate(input_ids, generation_config=self.gen_config)
-        batch_generated_text = self.tokenizer.batch_decode(output)
 
-        for item, gen_text in zip(batch, batch_generated_text):
-            gen_item = GeneratedItem(item.timestamp, time.time(), item.prompt, gen_text[len(item.prompt):])
-            self._result_pool[item.timestamp] = gen_item
+        try:
+            output = self.model.generate(input_ids, generation_config=self.gen_config)
+            batch_generated_text = self.tokenizer.batch_decode(output)
+        except Exception as e:
+            logger.error(f"[Inference Error]: {e}")
+            for item in batch:
+                gen_item = GeneratedItem(item.timestamp, time.time(), item.prompt, f"[Inference Error]: {e}")
+                self._result_pool[item.timestamp] = gen_item
+        else:
+            for item, gen_text in zip(batch, batch_generated_text):
+                gen_item = GeneratedItem(item.timestamp, time.time(), item.prompt, gen_text[len(item.prompt):])
+                self._result_pool[item.timestamp] = gen_item
 
     def start(self):
         self.worker_thread.start()
@@ -228,15 +244,15 @@ def main():
 
     @app.route('/inference', methods=["POST"])
     def _inference():
-        timestamp = time.time()
-
         try:
             raw_data = request.get_data().decode()
             prompt = json.loads(raw_data)["prompt"]
         except Exception as e:
-            return str(e)
+            return f"[Data Decode Error]: {e}"
 
         logger.info(f"{request}\t{raw_data}")
+
+        timestamp = time.time()
         inference_queue.enqueue(PromptItem(timestamp, prompt))
         response = vars(inference_queue.dequeue(timestamp))
         logger.info(response)
